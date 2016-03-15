@@ -27,6 +27,8 @@ BUILD_DIR=$1
 CACHE_DIR=$2
 ENV_DIR=$3
 
+echo "BUILD_DIR $BUILD_DIR CACHE_DIR $CACHE_DIR ENV_DIR $ENV_DIR"
+
 # Static configurations for virtualenv caches.
 VIRTUALENV_LOC=".heroku/venv"
 LEGACY_TRIGGER="lib/python2.7"
@@ -74,7 +76,7 @@ source $BIN_DIR/utils
 source $BIN_DIR/warnings
 
 # Directory Hacks for path consistency.
-APP_DIR='/app'
+APP_DIR=$CACHE_DIR/app
 TMP_APP_DIR=$CACHE_DIR/tmp_app_dir
 
 # Skip these steps for Docker.
@@ -82,6 +84,7 @@ if [[ ! "$DOCKER_BUILD" ]]; then
 
   # Copy Anvil app dir to temporary storage...
   bpwatch start anvil_appdir_stage
+  echo "SLUG_ID $SLUG_ID"
   if [ "$SLUG_ID" ]; then
     mkdir -p $TMP_APP_DIR
     deep-mv $APP_DIR $TMP_APP_DIR
@@ -208,9 +211,17 @@ sub-env $BIN_DIR/steps/geo-libs
 source $BIN_DIR/steps/gdal
 
 # Install dependencies with Pip.
+echo 'starting pip-install'
+echo '$app heroku'
+ls $APP_DIR/.heroku 
+echo '/app heroku'
+ls /app/.heroku
+
+ln -s $APP_DIR/.heroku/python /app/.heroku/python
 source $BIN_DIR/steps/pip-install
 
 # Django collectstatic support.
+echo 'starting collectstatic'
 sub-env $BIN_DIR/steps/collectstatic
 
 
@@ -229,11 +240,13 @@ cp $ROOT_DIR/vendor/python.gunicorn.sh $GUNICORN_PROFILE_PATH
 
 
 # Experimental post_compile hook.
+echo 'starting post_compile'
 bpwatch start post_compile
   source $BIN_DIR/steps/hooks/post_compile
 bpwatch stop post_compile
 
 # Store new artifacts in cache.
+echo 'dumping cache'
 bpwatch start dump_cache
 
   rm -rf $CACHE_DIR/.heroku/python
@@ -250,21 +263,28 @@ bpwatch start dump_cache
   cp -R .heroku/venv $CACHE_DIR/.heroku/ &> /dev/null || true
 
 bpwatch stop dump_cache
+echo 'dumped cache'
 
 # Fin.
 if [[ ! "$DOCKER_BUILD" ]]; then
 
+  echo 'appdir_commit'
   bpwatch start appdir_commit
+    echo 'rm orig'
     deep-rm $ORIG_BUILD_DIR
+    echo 'mv build'
     deep-mv $BUILD_DIR $ORIG_BUILD_DIR
   bpwatch stop appdir_commit
 
   bpwatch start anvil_appdir_commit
+  echo 'anvil_appdir_commit'
   if [ "$SLUG_ID" ]; then
     deep-mv $TMP_APP_DIR $APP_DIR
   fi
 
+  echo 'stopping watch'
   bpwatch stop anvil_appdir_commit
   bpwatch stop compile
 fi
+echo 'done with compile'
 
